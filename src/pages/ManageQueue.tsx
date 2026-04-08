@@ -465,6 +465,9 @@ const ManageQueue = () => {
           prev ? { ...prev, latest_number: nextTicket.ticket_number } : prev,
         );
         setCurrentServing(nextTicket);
+
+        // Send notifications for the new serving ticket
+        await sendQueueNotifications(nextTicket.ticket_number);
       }
 
       await fetchTickets();

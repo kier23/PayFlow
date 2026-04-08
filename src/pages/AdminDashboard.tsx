@@ -165,18 +165,36 @@ const AdminDashboard = () => {
         setTicketAnalytics(analytics);
       }
 
-      // Fetch queue growth data
+      // Fetch queue growth data - count actual tickets per day
       const { data: queueStats } = await supabase
-        .from("Queue")
-        .select("latest_number, created_at")
-        .in("id", queueIds)
+        .from("Queue_Tickets")
+        .select("created_at")
+        .in("queue_id", queueIds)
+        .gte("created_at", startDate.toISOString())
         .order("created_at", { ascending: true });
 
       if (queueStats) {
-        const growthData = queueStats.map((q) => ({
-          name: new Date(q.created_at).toLocaleDateString(),
-          tickets: q.latest_number,
-        }));
+        // Group tickets by date and count them
+        const ticketsByDate = new Map<string, number>();
+
+        queueStats.forEach((ticket) => {
+          const date = new Date(ticket.created_at).toLocaleDateString();
+          ticketsByDate.set(date, (ticketsByDate.get(date) || 0) + 1);
+        });
+
+        // Convert to chart data format
+        const growthData = Array.from(ticketsByDate.entries())
+          .map(([date, count]) => ({
+            name: date,
+            tickets: count,
+          }))
+          .sort((a, b) => {
+            // Sort by date
+            const dateA = new Date(a.name).getTime();
+            const dateB = new Date(b.name).getTime();
+            return dateA - dateB;
+          });
+
         setQueueGrowthData(growthData);
       }
     };

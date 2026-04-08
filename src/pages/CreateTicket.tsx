@@ -4,11 +4,7 @@ import { supabase } from "../lib/supabase";
 import { getGuestId } from "../lib/getGuestId";
 import Layout from "../components/Layout";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import {
-  faTicket,
-  faMoneyBill,
-  faClipboardList,
-} from "@fortawesome/free-solid-svg-icons";
+import { faTicket } from "@fortawesome/free-solid-svg-icons";
 import { getToken } from "firebase/messaging";
 import { messaging } from "../lib/firebase";
 
@@ -17,7 +13,15 @@ const CreateTicket = () => {
   const navigate = useNavigate();
   const [clientName, setClientName] = useState("");
   const [email, setEmail] = useState("");
-  const [payment, setPayment] = useState<"cashier" | "assessment">("cashier");
+  const [purpose, setPurpose] = useState<
+    | "adding_fee"
+    | "tuition_fee"
+    | "summer_class_fee"
+    | "vehicle_sticker_fee"
+    | "graduation_fee"
+    | "custom"
+  >("tuition_fee");
+  const [customPurpose, setCustomPurpose] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -69,7 +73,7 @@ const CreateTicket = () => {
           g_id: guestId,
           c_name: clientName,
           c_email: email,
-          c_payment: payment,
+          c_payment: purpose === "custom" ? customPurpose : purpose,
           c_token: fcmToken,
         },
       );
@@ -217,34 +221,53 @@ const CreateTicket = () => {
                 />
               </div>
 
-              {/* Payment Type */}
+              {/* Purpose */}
               <div className="space-y-2">
                 <label className="text-xs md:text-sm font-semibold text-gray-700 block">
-                  Payment Type
+                  Purpose
                 </label>
                 <select
-                  value={payment}
+                  value={purpose}
                   onChange={(e) =>
-                    setPayment(e.target.value as "cashier" | "assessment")
+                    setPurpose(
+                      e.target.value as
+                        | "adding_fee"
+                        | "tuition_fee"
+                        | "summer_class_fee"
+                        | "vehicle_sticker_fee"
+                        | "graduation_fee"
+                        | "custom",
+                    )
                   }
                   className="w-full px-3 md:px-4 py-2.5 md:py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-primary/20 focus:border-primary transition-all bg-white text-gray-900 cursor-pointer text-sm md:text-base"
                 >
-                  <option value="cashier">
-                    <FontAwesomeIcon
-                      icon={faMoneyBill}
-                      className="mr-1 md:mr-2"
-                    />{" "}
-                    Cashier
+                  <option value="adding_fee">Adding Fee</option>
+                  <option value="tuition_fee">Tuition Fee</option>
+                  <option value="summer_class_fee">Summer Class Fee</option>
+                  <option value="vehicle_sticker_fee">
+                    Vehicle Sticker Fee
                   </option>
-                  <option value="assessment">
-                    <FontAwesomeIcon
-                      icon={faClipboardList}
-                      className="mr-1 md:mr-2"
-                    />{" "}
-                    Assessment
-                  </option>
+                  <option value="graduation_fee">Graduation Fee</option>
+                  <option value="custom">Custom (Enter Manually)</option>
                 </select>
               </div>
+
+              {/* Custom Purpose Input */}
+              {purpose === "custom" && (
+                <div className="space-y-2">
+                  <label className="text-xs md:text-sm font-semibold text-gray-700 block">
+                    Specify Purpose
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={customPurpose}
+                    onChange={(e) => setCustomPurpose(e.target.value)}
+                    className="w-full px-3 md:px-4 py-2.5 md:py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-primary/20 focus:border-primary transition-all bg-white text-gray-900 placeholder:text-gray-400 text-sm md:text-base"
+                    placeholder="Enter your purpose (e.g., ID Replacement, Transcript Request)"
+                  />
+                </div>
+              )}
 
               {/* Submit */}
               <button

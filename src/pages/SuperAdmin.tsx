@@ -232,17 +232,35 @@ const SuperAdmin: React.FC = () => {
         setTicketAnalytics(analytics);
       }
 
-      // Fetch all queues for growth data
+      // Fetch queue growth data - count actual tickets per day (system-wide)
       const { data: queueStats } = await supabase
-        .from("Queue")
-        .select("id, latest_number, created_at, managed_by")
+        .from("Queue_Tickets")
+        .select("created_at")
+        .gte("created_at", startDate.toISOString())
         .order("created_at", { ascending: true });
 
       if (queueStats) {
-        const growthData = queueStats.map((q) => ({
-          name: new Date(q.created_at).toLocaleDateString(),
-          tickets: q.latest_number,
-        }));
+        // Group tickets by date and count them
+        const ticketsByDate = new Map<string, number>();
+
+        queueStats.forEach((ticket) => {
+          const date = new Date(ticket.created_at).toLocaleDateString();
+          ticketsByDate.set(date, (ticketsByDate.get(date) || 0) + 1);
+        });
+
+        // Convert to chart data format
+        const growthData = Array.from(ticketsByDate.entries())
+          .map(([date, count]) => ({
+            name: date,
+            tickets: count,
+          }))
+          .sort((a, b) => {
+            // Sort by date
+            const dateA = new Date(a.name).getTime();
+            const dateB = new Date(b.name).getTime();
+            return dateA - dateB;
+          });
+
         setQueueGrowthData(growthData);
 
         // Fetch admin performance (tickets per admin)
@@ -251,6 +269,11 @@ const SuperAdmin: React.FC = () => {
           .select("id, name, email");
 
         if (profiles && tickets) {
+          // Get all queues to map admins
+          const { data: allQueues } = await supabase
+            .from("Queue")
+            .select("id, managed_by");
+
           const adminMap = new Map();
 
           profiles.forEach((profile) => {
@@ -261,22 +284,24 @@ const SuperAdmin: React.FC = () => {
           });
 
           // Count tickets per admin (via queue management)
-          const queueIds = queueStats.map((q) => q.id);
-          const { data: queueTickets } = await supabase
-            .from("Queue_Tickets")
-            .select("queue_id")
-            .in("queue_id", queueIds);
+          if (allQueues) {
+            const queueIds = allQueues.map((q) => q.id);
+            const { data: queueTickets } = await supabase
+              .from("Queue_Tickets")
+              .select("queue_id")
+              .in("queue_id", queueIds);
 
-          if (queueTickets) {
-            queueTickets.forEach((qt) => {
-              const queue = queueStats.find((q) => q.id === qt.queue_id);
-              if (queue) {
-                const adminData = adminMap.get(queue.managed_by);
-                if (adminData) {
-                  adminData.tickets++;
+            if (queueTickets) {
+              queueTickets.forEach((qt) => {
+                const queue = allQueues.find((q) => q.id === qt.queue_id);
+                if (queue) {
+                  const adminData = adminMap.get(queue.managed_by);
+                  if (adminData) {
+                    adminData.tickets++;
+                  }
                 }
-              }
-            });
+              });
+            }
           }
 
           setAdminPerformanceData(
