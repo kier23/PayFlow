@@ -18,6 +18,15 @@ const EndUserPage: React.FC = () => {
   const [activeTicketQueueId, setActiveTicketQueueId] = useState<string | null>(
     null,
   );
+  const [showTicketModal, setShowTicketModal] = useState(false);
+  const [userTickets, setUserTickets] = useState<
+    Array<{
+      queue_id: string;
+      ticket_number: number;
+      status: string;
+      purpose?: string;
+    }>
+  >([]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const codeReader = useRef<BrowserQRCodeReader | null>(null);
   const controlsRef = useRef<any>(null);
@@ -65,6 +74,32 @@ const EndUserPage: React.FC = () => {
       window.removeEventListener("focus", handleVisibilityChange);
     };
   }, []);
+
+  // Fetch all user tickets for the modal
+  const fetchUserTickets = async () => {
+    const guestId = getGuestId();
+
+    try {
+      const { data, error } = await supabase
+        .from("Queue_Tickets")
+        .select("queue_id, ticket_number, status, purpose")
+        .eq("guest_id", guestId)
+        .in("status", ["waiting", "serving"])
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        setUserTickets(data);
+        setShowTicketModal(true);
+      } else {
+        alert("No active tickets found.");
+      }
+    } catch (err) {
+      console.error("Error fetching tickets:", err);
+      alert("Failed to load tickets.");
+    }
+  };
 
   useEffect(() => {
     codeReader.current = new BrowserQRCodeReader();
@@ -265,14 +300,12 @@ const EndUserPage: React.FC = () => {
                   {/* My Ticket Button */}
                   {hasActiveTicket && activeTicketQueueId && (
                     <Button
-                      onClick={() =>
-                        navigate(`/queue/${activeTicketQueueId}/status`)
-                      }
+                      onClick={fetchUserTickets}
                       className="w-full font-bold py-6 text-base bg-linear-to-r from-green-600 via-emerald-600 to-green-600 hover:from-emerald-700 hover:via-emerald-700 hover:to-emerald-700 shadow-xl hover:shadow-2xl transition-all transform hover:scale-[1.02] text-white"
                       size="lg"
                     >
                       <FontAwesomeIcon icon={faTicket} className="mr-2" />
-                      My Active Ticket
+                      My Active Ticket{userTickets.length > 1 ? "s" : ""}
                     </Button>
                   )}
                 </div>
@@ -385,6 +418,104 @@ const EndUserPage: React.FC = () => {
           </p>
         </div>
       </footer>
+
+      {/* Ticket Selection Modal */}
+      {showTicketModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 md:p-8 border border-primary/20 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold bg-linear-to-r from-primary via-orange-600 to-black bg-clip-text text-transparent">
+                Select Ticket to Track
+              </h3>
+              <button
+                onClick={() => setShowTicketModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {userTickets.map((ticket, index) => (
+                <button
+                  key={index}
+                  onClick={() => {
+                    navigate(`/queue/${ticket.queue_id}/status`);
+                    setShowTicketModal(false);
+                  }}
+                  className="w-full text-left p-4 md:p-5 bg-linear-to-br from-white to-orange-50/30 border-2 border-gray-200 rounded-2xl hover:border-primary hover:shadow-lg transition-all group"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className="text-2xl font-black text-primary">
+                          #{ticket.ticket_number}
+                        </span>
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-bold ${
+                            ticket.status === "serving"
+                              ? "bg-green-100 text-green-800"
+                              : "bg-yellow-100 text-yellow-800"
+                          }`}
+                        >
+                          {ticket.status === "serving"
+                            ? "🔔 Serving Now"
+                            : "⏳ Waiting"}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-600 font-medium">
+                        Queue ID:{" "}
+                        <span className="font-mono font-bold">
+                          {ticket.queue_id}
+                        </span>
+                      </p>
+                      {ticket.purpose && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Purpose: {ticket.purpose}
+                        </p>
+                      )}
+                    </div>
+                    <div className="ml-3 text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                      <svg
+                        className="w-6 h-6"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 5l7 7-7 7"
+                        />
+                      </svg>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setShowTicketModal(false)}
+              className="w-full mt-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-semibold transition-all"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

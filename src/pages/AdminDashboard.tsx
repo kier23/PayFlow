@@ -60,6 +60,7 @@ const AdminDashboard = () => {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [creatingQueue, setCreatingQueue] = useState(false);
+  const [queueName, setQueueName] = useState("");
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("weekly");
   const [ticketAnalytics, setTicketAnalytics] = useState<TicketAnalytics>({
     waiting: 0,
@@ -208,16 +209,21 @@ const AdminDashboard = () => {
       return;
     }
 
+    if (!queueName.trim()) {
+      setError("Please enter a queue name");
+      return;
+    }
+
     setCreatingQueue(true);
     setError(null);
     setShowConfirmDialog(false);
 
     try {
-      // Use Supabase functions.invoke with the admin ID
+      // Use Supabase functions.invoke with the admin ID and queue name
       const { data, error } = await supabase.functions.invoke(
         "create-qr-and-queue",
         {
-          body: {},
+          body: { name: queueName.trim() },
         },
       );
 
@@ -236,6 +242,7 @@ const AdminDashboard = () => {
       }
 
       setQueue(updatedQueueData || []);
+      setQueueName(""); // Reset the queue name input
     } catch (err: any) {
       setError(err.message || "Failed to create queue");
       console.error("Error creating queue:", err);
@@ -374,9 +381,14 @@ const AdminDashboard = () => {
                         className="group bg-white border border-gray-200 rounded-3xl p-8 shadow-lg hover:shadow-2xl hover:border-primary/50 transition-all duration-300 transform hover:scale-[1.02]"
                       >
                         <div className="flex justify-between items-start">
-                          <h3 className="text-xl font-bold text-gray-900 truncate">
-                            Queue #{item.id}
-                          </h3>
+                          <div className="flex-1 mr-2">
+                            <h3 className="text-xl font-bold text-gray-900 truncate">
+                              {item.name || `Queue #${item.id}`}
+                            </h3>
+                            <p className="text-xs text-gray-500 mt-1 font-mono">
+                              ID: {item.id}
+                            </p>
+                          </div>
 
                           <span
                             className={`text-xs px-4 py-2 rounded-full font-bold ${
@@ -658,20 +670,38 @@ const AdminDashboard = () => {
               <h3 className="text-2xl font-extrabold text-gray-900 mb-3">
                 Create New Queue
               </h3>
-              <p className="text-gray-600 mb-8 font-medium leading-relaxed">
-                Are you sure you want to create a new queue? A unique ID and QR
-                code will be generated automatically.
+              <p className="text-gray-600 mb-6 font-medium leading-relaxed">
+                Enter a name for your new queue. A unique ID and QR code will be generated automatically.
               </p>
+              
+              {/* Queue Name Input */}
+              <div className="mb-6 text-left">
+                <label className="text-sm font-semibold text-gray-700 block mb-2">
+                  Queue Name
+                </label>
+                <input
+                  type="text"
+                  value={queueName}
+                  onChange={(e) => setQueueName(e.target.value)}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-primary/20 focus:border-primary transition-all bg-white text-gray-900 placeholder:text-gray-400"
+                  placeholder="e.g., Cashier 1, Registration, Records"
+                  required
+                />
+              </div>
+              
               <div className="flex gap-4">
                 <button
-                  onClick={() => setShowConfirmDialog(false)}
+                  onClick={() => {
+                    setShowConfirmDialog(false);
+                    setQueueName("");
+                  }}
                   className="flex-1 px-6 py-3 border-2 border-gray-300 rounded-xl hover:bg-gray-50 transition-all font-semibold shadow-md hover:shadow-lg"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleCreateQueue}
-                  disabled={creatingQueue}
+                  disabled={creatingQueue || !queueName.trim()}
                   className="flex-1 px-6 py-3 bg-linear-to-r from-primary via-orange-600 to-primary hover:from-orange-700 hover:via-orange-700 hover:to-orange-700 text-white rounded-xl transition-all font-semibold shadow-xl hover:shadow-2xl disabled:opacity-50 transform hover:scale-[1.02]"
                 >
                   {creatingQueue ? "Creating..." : "Create Queue"}
