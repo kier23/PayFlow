@@ -41,6 +41,7 @@ type Profile = {
   name: string;
   email: string;
   role: string;
+  office?: string;
 };
 
 type AccountRow = {
@@ -48,6 +49,7 @@ type AccountRow = {
   name: string;
   email: string;
   role: string;
+  office?: string;
 };
 
 type TicketAnalytics = {
@@ -59,6 +61,7 @@ type TicketAnalytics = {
 };
 
 type TimeFilter = "weekly" | "monthly" | "yearly";
+type OfficeFilter = "all" | "assessment" | "cashier";
 
 const SuperAdmin: React.FC = () => {
   const [email, setEmail] = useState("");
@@ -76,6 +79,8 @@ const SuperAdmin: React.FC = () => {
 
   // Analytics state
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("weekly");
+  const [graphOfficeFilter, setGraphOfficeFilter] =
+    useState<OfficeFilter>("all");
   const [ticketAnalytics, setTicketAnalytics] = useState<TicketAnalytics>({
     waiting: 0,
     serving: 0,
@@ -89,6 +94,7 @@ const SuperAdmin: React.FC = () => {
   // Invite dialog state
   const [openInviteDialog, setOpenInviteDialog] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteOffice, setInviteOffice] = useState("assessment");
   const [submitting, setSubmitting] = useState(false);
 
   // Delete confirmation state
@@ -149,7 +155,7 @@ const SuperAdmin: React.FC = () => {
     setSuperAdmin(profileData);
 
     const [profilesRes, queueRes] = await Promise.all([
-      supabase.from("Profiles").select("id, name, email, role"),
+      supabase.from("Profiles").select("id, name, email, role, office"),
       supabase.from("Queue").select("id", { count: "exact", head: true }),
     ]);
 
@@ -166,6 +172,7 @@ const SuperAdmin: React.FC = () => {
         name: item.name || "-",
         email: item.email || "-",
         role: item.role || "user",
+        office: item.office || "-",
       }));
       setAccounts(profileList);
       const totalUsers = profileList.length;
@@ -209,10 +216,49 @@ const SuperAdmin: React.FC = () => {
       }
 
       // Fetch all tickets with status
-      const { data: tickets } = await supabase
+      // If office filter is set, we first get queue_ids managed by admins of that office
+      let filteredQueueIds: number[] | null = null;
+
+      if (graphOfficeFilter !== "all") {
+        const { data: officeProfiles } = await supabase
+          .from("Profiles")
+          .select("id")
+          .eq("office", graphOfficeFilter);
+
+        if (officeProfiles && officeProfiles.length > 0) {
+          const profileIds = officeProfiles.map((p) => p.id);
+          const { data: officeQueues } = await supabase
+            .from("Queue")
+            .select("id")
+            .in("managed_by", profileIds);
+          filteredQueueIds = officeQueues ? officeQueues.map((q) => q.id) : [];
+        } else {
+          filteredQueueIds = [];
+        }
+      }
+
+      let ticketsQuery = supabase
         .from("Queue_Tickets")
         .select("status, created_at, queue_id")
         .gte("created_at", startDate.toISOString());
+
+      if (filteredQueueIds !== null) {
+        if (filteredQueueIds.length === 0) {
+          setTicketAnalytics({
+            waiting: 0,
+            serving: 0,
+            done: 0,
+            skipped: 0,
+            cancelled: 0,
+          });
+          setQueueGrowthData([]);
+          setAdminPerformanceData([]);
+          return;
+        }
+        ticketsQuery = ticketsQuery.in("queue_id", filteredQueueIds);
+      }
+
+      const { data: tickets } = await ticketsQuery;
 
       if (tickets) {
         const analytics: TicketAnalytics = {
@@ -232,12 +278,18 @@ const SuperAdmin: React.FC = () => {
         setTicketAnalytics(analytics);
       }
 
-      // Fetch queue growth data - count actual tickets per day (system-wide)
-      const { data: queueStats } = await supabase
+      // Fetch queue growth data - count actual tickets per day
+      let queueStatsQuery = supabase
         .from("Queue_Tickets")
         .select("created_at")
         .gte("created_at", startDate.toISOString())
         .order("created_at", { ascending: true });
+
+      if (filteredQueueIds !== null && filteredQueueIds.length > 0) {
+        queueStatsQuery = queueStatsQuery.in("queue_id", filteredQueueIds);
+      }
+
+      const { data: queueStats } = await queueStatsQuery;
 
       if (queueStats) {
         // Group tickets by date and count them
@@ -264,9 +316,13 @@ const SuperAdmin: React.FC = () => {
         setQueueGrowthData(growthData);
 
         // Fetch admin performance (tickets per admin)
-        const { data: profiles } = await supabase
+        let profilesQuery = supabase
           .from("Profiles")
-          .select("id, name, email");
+          .select("id, name, email, office");
+        if (graphOfficeFilter !== "all") {
+          profilesQuery = profilesQuery.eq("office", graphOfficeFilter);
+        }
+        const { data: profiles } = await profilesQuery;
 
         if (profiles && tickets) {
           // Get all queues to map admins
@@ -312,7 +368,7 @@ const SuperAdmin: React.FC = () => {
     };
 
     fetchAnalytics();
-  }, [timeFilter]);
+  }, [timeFilter, graphOfficeFilter]);
 
   // Auto-dismiss notification after 4 seconds
   useEffect(() => {
@@ -395,6 +451,7 @@ const SuperAdmin: React.FC = () => {
           body: JSON.stringify({
             email,
             name: "admin",
+            office: inviteOffice,
             redirect_to: `${window.location.origin}/complete-profile`,
           }),
         },
@@ -414,6 +471,7 @@ const SuperAdmin: React.FC = () => {
 
       setOpenInviteDialog(false);
       setInviteEmail("");
+      setInviteOffice("assessment");
     } catch (err: any) {
       setNotification({
         show: true,
@@ -635,12 +693,6 @@ const SuperAdmin: React.FC = () => {
               </div>
               <div className="flex gap-3">
                 <button
-                  onClick={() => setOpenInviteDialog(true)}
-                  className="px-6 py-3 bg-linear-to-r from-green-500 to-green-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl hover:scale-105 transition-all"
-                >
-                  <FontAwesomeIcon icon={faUserPlus} className="mr-2" /> Invite
-                </button>
-                <button
                   onClick={handleLogout}
                   className="px-6 py-3 bg-linear-to-r from-red-500 to-red-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl hover:scale-105 transition-all"
                 >
@@ -719,41 +771,71 @@ const SuperAdmin: React.FC = () => {
               </div>
 
               {/* Time Filter */}
-              <div className="flex items-center gap-2 bg-gray-100 rounded-xl p-1.5">
-                <FontAwesomeIcon
-                  icon={faCalendarAlt}
-                  className="text-gray-500 mr-2"
-                />
-                <button
-                  onClick={() => setTimeFilter("weekly")}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                    timeFilter === "weekly"
-                      ? "bg-white text-primary shadow-md"
-                      : "text-gray-600 hover:text-gray-900"
-                  }`}
-                >
-                  Weekly
-                </button>
-                <button
-                  onClick={() => setTimeFilter("monthly")}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                    timeFilter === "monthly"
-                      ? "bg-white text-primary shadow-md"
-                      : "text-gray-600 hover:text-gray-900"
-                  }`}
-                >
-                  Monthly
-                </button>
-                <button
-                  onClick={() => setTimeFilter("yearly")}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                    timeFilter === "yearly"
-                      ? "bg-white text-primary shadow-md"
-                      : "text-gray-600 hover:text-gray-900"
-                  }`}
-                >
-                  Yearly
-                </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 bg-gray-100 rounded-xl p-1.5">
+                  <FontAwesomeIcon
+                    icon={faCalendarAlt}
+                    className="text-gray-500 mr-2"
+                  />
+                  <button
+                    onClick={() => setTimeFilter("weekly")}
+                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                      timeFilter === "weekly"
+                        ? "bg-white text-primary shadow-md"
+                        : "text-gray-600 hover:text-gray-900"
+                    }`}
+                  >
+                    Weekly
+                  </button>
+                  <button
+                    onClick={() => setTimeFilter("monthly")}
+                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                      timeFilter === "monthly"
+                        ? "bg-white text-primary shadow-md"
+                        : "text-gray-600 hover:text-gray-900"
+                    }`}
+                  >
+                    Monthly
+                  </button>
+                  <button
+                    onClick={() => setTimeFilter("yearly")}
+                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                      timeFilter === "yearly"
+                        ? "bg-white text-primary shadow-md"
+                        : "text-gray-600 hover:text-gray-900"
+                    }`}
+                  >
+                    Yearly
+                  </button>
+                </div>
+
+                {/* Office Filter */}
+                <div className="flex items-center gap-2 bg-gray-100 rounded-xl p-1.5">
+                  <span className="text-gray-500 text-sm font-semibold ml-1 mr-1">
+                    Office:
+                  </span>
+                  {(["all", "cashier", "assessment"] as OfficeFilter[]).map(
+                    (office) => (
+                      <button
+                        key={office}
+                        onClick={() => setGraphOfficeFilter(office)}
+                        className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all capitalize ${
+                          graphOfficeFilter === office
+                            ? office === "all"
+                              ? "bg-white text-primary shadow-md"
+                              : office === "cashier"
+                                ? "bg-white text-green-600 shadow-md"
+                                : "bg-white text-blue-600 shadow-md"
+                            : "text-gray-600 hover:text-gray-900"
+                        }`}
+                      >
+                        {office === "all"
+                          ? "All"
+                          : office.charAt(0).toUpperCase() + office.slice(1)}
+                      </button>
+                    ),
+                  )}
+                </div>
               </div>
             </div>
 
@@ -794,7 +876,7 @@ const SuperAdmin: React.FC = () => {
                               : "0";
                           return `${name}: ${value} (${percentage}%)`;
                         }}
-                        outerRadius={80}
+                        outerRadius={90}
                         fill="#8884d8"
                         dataKey="value"
                       >
@@ -993,16 +1075,24 @@ const SuperAdmin: React.FC = () => {
 
           {/* Account Management Table */}
           <div className="bg-white rounded-3xl shadow-xl p-6 md:p-8 border border-primary/20">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-12 h-12 rounded-xl bg-linear-to-br from-primary/10 to-primary/20 flex items-center justify-center">
-                <FontAwesomeIcon
-                  icon={faGear}
-                  className="text-2xl text-primary"
-                />
+            <div className="flex items-center justify-between gap-3 mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-linear-to-br from-primary/10 to-primary/20 flex items-center justify-center">
+                  <FontAwesomeIcon
+                    icon={faGear}
+                    className="text-2xl text-primary"
+                  />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-900">
+                  Account Management
+                </h2>
               </div>
-              <h2 className="text-2xl font-bold text-gray-900">
-                Account Management
-              </h2>
+              <button
+                onClick={() => setOpenInviteDialog(true)}
+                className="px-6 py-3 bg-linear-to-r from-green-500 to-green-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl hover:scale-105 transition-all"
+              >
+                <FontAwesomeIcon icon={faUserPlus} className="mr-2" /> Invite
+              </button>
             </div>
 
             {error && (
@@ -1023,6 +1113,9 @@ const SuperAdmin: React.FC = () => {
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
                       Role
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
+                      Office
                     </th>
                     <th className="px-6 py-4 text-right text-xs font-bold text-gray-600 uppercase tracking-wider">
                       Actions
@@ -1053,6 +1146,23 @@ const SuperAdmin: React.FC = () => {
                         >
                           {row.role}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm">
+                        {row.office && row.office !== "-" ? (
+                          <span
+                            className={`inline-flex px-3 py-1 rounded-full text-xs font-bold capitalize ${
+                              row.office === "cashier"
+                                ? "bg-green-100 text-green-800 border border-green-200"
+                                : row.office === "assessment"
+                                  ? "bg-blue-100 text-blue-800 border border-blue-200"
+                                  : "bg-gray-100 text-gray-700 border border-gray-200"
+                            }`}
+                          >
+                            {row.office}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 text-xs">—</span>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-sm text-right">
                         {row.role !== "superadmin" ? (
@@ -1130,6 +1240,20 @@ const SuperAdmin: React.FC = () => {
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-green-500/20 focus:border-green-500 transition-all bg-white text-gray-900 placeholder:text-gray-400"
                       placeholder="user@example.com"
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-gray-700 block">
+                      Office Assignment
+                    </label>
+
+                    <select
+                      value={inviteOffice}
+                      onChange={(e) => setInviteOffice(e.target.value)}
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-green-500/20 focus:border-green-500 transition-all bg-white text-gray-900"
+                    >
+                      <option value="assessment">Assessment</option>
+                      <option value="cashier">Cashier</option>
+                    </select>
                   </div>
 
                   <div className="flex gap-3 pt-4">

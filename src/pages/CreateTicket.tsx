@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { getGuestId } from "../lib/getGuestId";
@@ -23,6 +23,32 @@ const CreateTicket = () => {
   >("tuition_fee");
   const [customPurpose, setCustomPurpose] = useState("");
   const [loading, setLoading] = useState(false);
+  const [queueOffice, setQueueOffice] = useState<string | null>(null);
+
+  // Fetch the office of the admin managing this queue
+  useEffect(() => {
+    const fetchQueueOffice = async () => {
+      if (!queueId) return;
+      const { data: queueData } = await supabase
+        .from("Queue")
+        .select("managed_by")
+        .eq("id", queueId)
+        .single();
+
+      if (queueData?.managed_by) {
+        const { data: profileData } = await supabase
+          .from("Profiles")
+          .select("office")
+          .eq("id", queueData.managed_by)
+          .single();
+
+        if (profileData?.office) {
+          setQueueOffice(profileData.office);
+        }
+      }
+    };
+    fetchQueueOffice();
+  }, [queueId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -221,52 +247,56 @@ const CreateTicket = () => {
                 />
               </div>
 
-              {/* Purpose */}
-              <div className="space-y-2">
-                <label className="text-xs md:text-sm font-semibold text-gray-700 block">
-                  Purpose
-                </label>
-                <select
-                  value={purpose}
-                  onChange={(e) =>
-                    setPurpose(
-                      e.target.value as
-                        | "adding_fee"
-                        | "tuition_fee"
-                        | "summer_class_fee"
-                        | "vehicle_sticker_fee"
-                        | "graduation_fee"
-                        | "custom",
-                    )
-                  }
-                  className="w-full px-3 md:px-4 py-2.5 md:py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-primary/20 focus:border-primary transition-all bg-white text-gray-900 cursor-pointer text-sm md:text-base"
-                >
-                  <option value="adding_fee">Adding Fee</option>
-                  <option value="tuition_fee">Tuition Fee</option>
-                  <option value="summer_class_fee">Summer Class Fee</option>
-                  <option value="vehicle_sticker_fee">
-                    Vehicle Sticker Fee
-                  </option>
-                  <option value="graduation_fee">Graduation Fee</option>
-                  <option value="custom">Custom (Enter Manually)</option>
-                </select>
-              </div>
+              {/* Purpose - hidden for assessment office */}
+              {queueOffice !== "assessment" && (
+                <>
+                  <div className="space-y-2">
+                    <label className="text-xs md:text-sm font-semibold text-gray-700 block">
+                      Purpose
+                    </label>
+                    <select
+                      value={purpose}
+                      onChange={(e) =>
+                        setPurpose(
+                          e.target.value as
+                            | "adding_fee"
+                            | "tuition_fee"
+                            | "summer_class_fee"
+                            | "vehicle_sticker_fee"
+                            | "graduation_fee"
+                            | "custom",
+                        )
+                      }
+                      className="w-full px-3 md:px-4 py-2.5 md:py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-primary/20 focus:border-primary transition-all bg-white text-gray-900 cursor-pointer text-sm md:text-base"
+                    >
+                      <option value="adding_fee">Adding Fee</option>
+                      <option value="tuition_fee">Tuition Fee</option>
+                      <option value="summer_class_fee">Summer Class Fee</option>
+                      <option value="vehicle_sticker_fee">
+                        Vehicle Sticker Fee
+                      </option>
+                      <option value="graduation_fee">Graduation Fee</option>
+                      <option value="custom">Custom (Enter Manually)</option>
+                    </select>
+                  </div>
 
-              {/* Custom Purpose Input */}
-              {purpose === "custom" && (
-                <div className="space-y-2">
-                  <label className="text-xs md:text-sm font-semibold text-gray-700 block">
-                    Specify Purpose
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={customPurpose}
-                    onChange={(e) => setCustomPurpose(e.target.value)}
-                    className="w-full px-3 md:px-4 py-2.5 md:py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-primary/20 focus:border-primary transition-all bg-white text-gray-900 placeholder:text-gray-400 text-sm md:text-base"
-                    placeholder="Enter your purpose (e.g., ID Replacement, Transcript Request)"
-                  />
-                </div>
+                  {/* Custom Purpose Input */}
+                  {purpose === "custom" && (
+                    <div className="space-y-2">
+                      <label className="text-xs md:text-sm font-semibold text-gray-700 block">
+                        Specify Purpose
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={customPurpose}
+                        onChange={(e) => setCustomPurpose(e.target.value)}
+                        className="w-full px-3 md:px-4 py-2.5 md:py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-primary/20 focus:border-primary transition-all bg-white text-gray-900 placeholder:text-gray-400 text-sm md:text-base"
+                        placeholder="Enter your purpose (e.g., ID Replacement, Transcript Request)"
+                      />
+                    </div>
+                  )}
+                </>
               )}
 
               {/* Submit */}
