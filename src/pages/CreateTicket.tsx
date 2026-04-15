@@ -24,6 +24,7 @@ const CreateTicket = () => {
   const [customPurpose, setCustomPurpose] = useState("");
   const [loading, setLoading] = useState(false);
   const [queueOffice, setQueueOffice] = useState<string | null>(null);
+  const [queueName, setQueueName] = useState<string | null>(null);
 
   // Fetch the office of the admin managing this queue
   useEffect(() => {
@@ -31,7 +32,7 @@ const CreateTicket = () => {
       if (!queueId) return;
       const { data: queueData } = await supabase
         .from("Queue")
-        .select("managed_by")
+        .select("managed_by, name")
         .eq("id", queueId)
         .single();
 
@@ -45,6 +46,9 @@ const CreateTicket = () => {
         if (profileData?.office) {
           setQueueOffice(profileData.office);
         }
+      }
+      if (queueData?.name) {
+        setQueueName(queueData.name);
       }
     };
     fetchQueueOffice();
@@ -178,6 +182,17 @@ const CreateTicket = () => {
               <h2 className="text-3xl md:text-4xl font-bold bg-linear-to-r from-primary via-orange-600 to-black bg-clip-text text-transparent">
                 Create New Ticket
               </h2>
+              <p className="text-gray-600 text-sm">
+                Queue:{" "}
+                <span className="font-bold text-primary">
+                  {queueOffice
+                    ? queueOffice.charAt(0).toUpperCase() +
+                      queueOffice.slice(1).toLowerCase()
+                    : ""}
+                  {" - "}
+                  {queueName}
+                </span>
+              </p>
               <p className="text-gray-600 text-sm">
                 Fill in your details to join the queue
               </p>

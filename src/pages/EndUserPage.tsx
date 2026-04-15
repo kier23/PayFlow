@@ -177,25 +177,25 @@ const EndUserPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-background via-orange-50/30 to-background">
+    <div className="min-h-screen bg-white">
       {/* Header */}
-      <header className="bg-white/90 backdrop-blur-xl shadow-lg sticky top-0 z-50 border-b border-primary/20">
-        <div className="container mx-auto px-4 py-5">
+      <header className="bg-white/90 backdrop-blur-xl shadow-lg sticky top-0 z-50 border-b border-primary/20 overflow-visible">
+        <div className="container mx-auto px-4 py-5 relative z-10">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl from-primary flex items-center justify-center shadow-md">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-md">
                 <img
                   src="/PayFlow-Logo_transparent.png"
                   alt="PayFlow Logo"
                   className="w-full h-full object-cover"
                 />
               </div>
+
               <h1 className="text-3xl md:text-4xl font-extrabold bg-linear-to-r from-primary via-orange-600 to-black bg-clip-text text-transparent">
-                PayFlow PSU
+                PayFlow - PalawanSU
               </h1>
             </div>
 
-            {/* Login Button - Top Right */}
             <button
               onClick={() => navigate("/admin")}
               className="px-6 py-2.5 bg-linear-to-r from-primary via-orange-600 to-primary text-white rounded-xl font-semibold shadow-md hover:shadow-lg transition-all hover:scale-105 whitespace-nowrap"
@@ -205,9 +205,14 @@ const EndUserPage: React.FC = () => {
           </div>
         </div>
       </header>
+      {/* Orange Spill Gradient */}
+      <div className="absolute top-10 left-0 w-full h-225 pointer-events-none z-0 overflow-hidden">
+        <div className="absolute inset-0 bg-linear-to-b from-orange-500/70 via-orange-400/60 to-transparent blur-3xl"></div>
+      </div>
 
       {/* Main Content - Responsive Layout */}
-      <main className="container mx-auto px-4 py-8">
+
+      <main className="relative z-10 container mx-auto px-4 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 max-w-7xl mx-auto">
           {/* Right Column - QR Scanner & Input Combined (Full width on mobile, 1/3 on PC) - Moved to top on mobile */}
           <div className="lg:col-span-1 order-first lg:order-last">

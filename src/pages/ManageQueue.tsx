@@ -21,6 +21,7 @@ type Queue = {
   managed_by: string;
   latest_number: number | null;
   cutoff_number: number | null;
+  name: string;
 };
 
 type TicketStatus = "waiting" | "serving" | "done" | "skipped" | "cancelled";
@@ -39,7 +40,7 @@ const ManageQueue = () => {
   const [autoAdvanceTimer, setAutoAdvanceTimer] = useState<number | null>(null);
   const [countdown, setCountdown] = useState<number>(5);
   const [showCutoffModal, setShowCutoffModal] = useState(false);
-  const [cutoffIncrement, setCutoffIncrement] = useState<number | null>(null);
+  
   const [customCutoffValue, setCustomCutoffValue] = useState<string>("");
 
   const [queue, setQueue] = useState<Queue | null>(null);
@@ -573,7 +574,6 @@ const ManageQueue = () => {
     }
 
     setQueue(updatedQueue);
-    setCutoffIncrement(increment);
     setShowCutoffModal(false);
   };
 
@@ -617,7 +617,6 @@ const ManageQueue = () => {
 
     if (updatedQueue) {
       setQueue(updatedQueue);
-      setCutoffIncrement(null);
     }
   };
 
@@ -657,6 +656,13 @@ const ManageQueue = () => {
                         {queue.id}
                       </span>
                     </p>
+                    <p className="text-gray-500 text-sm mt-1">
+                      Queue Name:{" "}
+                      <span className="font-mono font-bold">
+                        {queue?.name}
+                      </span>
+                    </p>
+                    
                   </div>
                 </div>
 

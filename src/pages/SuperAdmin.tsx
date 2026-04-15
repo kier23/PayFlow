@@ -465,7 +465,7 @@ const SuperAdmin: React.FC = () => {
 
       setNotification({
         show: true,
-        message: "Invite sent successfully! 📩",
+        message: "Invite sent successfully!",
         type: "success",
       });
 

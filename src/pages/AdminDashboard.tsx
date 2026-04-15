@@ -41,6 +41,7 @@ type QueueItem = {
   managed_by: string;
   qr: string;
   latest_number: number;
+  is_active: boolean;
 };
 
 type TicketAnalytics = {
@@ -70,6 +71,8 @@ const AdminDashboard = () => {
     cancelled: 0,
   });
   const [queueGrowthData, setQueueGrowthData] = useState<any[]>([]);
+  const [inactiveQueues, setInactiveQueues] = useState<QueueItem[]>([]);
+  const [showInactiveDialog, setShowInactiveDialog] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -107,7 +110,8 @@ const AdminDashboard = () => {
       const { data: queueData, error: queueError } = await supabase
         .from("Queue")
         .select("*")
-        .eq("managed_by", profile.id);
+        .eq("managed_by", profile.id)
+        .eq("is_active", true);
 
       if (queueError) {
         setError(queueError.message || "Error fetching queues");
@@ -121,6 +125,23 @@ const AdminDashboard = () => {
     };
     fetchProfiles();
   }, []);
+
+  const fetchInactiveQueues = async () => {
+    if (!admin) return;
+
+    const { data, error } = await supabase
+      .from("Queue")
+      .select("*")
+      .eq("managed_by", admin.id)
+      .eq("is_active", false);
+
+    if (error) {
+      setError(error.message);
+      return;
+    }
+
+    setInactiveQueues(data || []);
+  };
 
   // Fetch ticket analytics based on time filter
   useEffect(() => {
@@ -223,7 +244,7 @@ const AdminDashboard = () => {
       const { data, error } = await supabase.functions.invoke(
         "create-qr-and-queue",
         {
-          body: { name: queueName.trim() },
+          body: { queueName: queueName.trim() },
         },
       );
 
@@ -252,36 +273,65 @@ const AdminDashboard = () => {
   };
 
   const handleDeleteQueue = async (queueId: string) => {
-    if (
-      !window.confirm(
-        "Are you sure you want to delete this queue? This action cannot be undone.",
-      )
-    ) {
+    if (!window.confirm("Are you sure you want to deactivate this queue?")) {
       return;
     }
 
     try {
-      const { error } = await supabase.from("Queue").delete().eq("id", queueId);
+      const { error } = await supabase
+        .from("Queue")
+        .update({
+          is_active: false,
+        })
+        .eq("id", queueId);
 
       if (error) {
         setError(error.message);
         return;
       }
 
-      // Refresh the queue list
+      // Refresh active queues
       if (admin) {
-        const { data: updatedQueueData, error: updatedQueueError } =
-          await supabase.from("Queue").select("*").eq("managed_by", admin.id);
+        const { data } = await supabase
+          .from("Queue")
+          .select("*")
+          .eq("managed_by", admin.id)
+          .eq("is_active", true);
 
-        if (updatedQueueError) {
-          setError(updatedQueueError.message);
-        } else {
-          setQueue(updatedQueueData || []);
-        }
+        setQueue(data || []);
       }
     } catch (err: any) {
-      setError(err.message || "Failed to delete queue");
-      console.error("Error deleting queue:", err);
+      setError(err.message);
+    }
+  };
+
+  const handleRestoreQueue = async (queueId: string) => {
+    try {
+      const { error } = await supabase
+        .from("Queue")
+        .update({
+          is_active: true,
+        })
+        .eq("id", queueId);
+
+      if (error) {
+        setError(error.message);
+        return;
+      }
+
+      fetchInactiveQueues();
+
+      if (admin) {
+        const { data } = await supabase
+          .from("Queue")
+          .select("*")
+          .eq("managed_by", admin.id)
+          .eq("is_active", true);
+
+        setQueue(data || []);
+      }
+    } catch (err: any) {
+      setError(err.message);
     }
   };
 
@@ -338,7 +388,7 @@ const AdminDashboard = () => {
                   </p>
                 </div>
 
-                <div className="flex gap-4">
+                <div className="flex gap-4 flex-wrap">
                   <button
                     onClick={handleLogout}
                     className="px-6 py-3 bg-linear-to-r from-gray-100 to-gray-50 hover:from-gray-200 hover:to-gray-100 rounded-xl transition-all font-semibold shadow-md hover:shadow-lg border border-gray-200"
@@ -350,6 +400,15 @@ const AdminDashboard = () => {
                     className="inline-flex items-center gap-2 px-6 py-3 bg-linear-to-r from-primary via-orange-600 to-primary hover:from-orange-700 hover:via-orange-700 hover:to-orange-700 text-white rounded-xl transition-all font-semibold shadow-xl hover:shadow-2xl transform hover:scale-[1.02]"
                   >
                     New Queue
+                  </button>
+                  <button
+                    onClick={() => {
+                      fetchInactiveQueues();
+                      setShowInactiveDialog(true);
+                    }}
+                    className="px-6 py-3 bg-gray-700 text-white rounded-xl font-semibold shadow-lg"
+                  >
+                    Inactive Queues
                   </button>
                 </div>
               </div>
@@ -671,9 +730,10 @@ const AdminDashboard = () => {
                 Create New Queue
               </h3>
               <p className="text-gray-600 mb-6 font-medium leading-relaxed">
-                Enter a name for your new queue. A unique ID and QR code will be generated automatically.
+                Enter a name for your new queue. A unique ID and QR code will be
+                generated automatically.
               </p>
-              
+
               {/* Queue Name Input */}
               <div className="mb-6 text-left">
                 <label className="text-sm font-semibold text-gray-700 block mb-2">
@@ -688,7 +748,7 @@ const AdminDashboard = () => {
                   required
                 />
               </div>
-              
+
               <div className="flex gap-4">
                 <button
                   onClick={() => {
@@ -708,6 +768,46 @@ const AdminDashboard = () => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showInactiveDialog && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-white rounded-3xl p-8 max-w-lg w-full">
+            <h2 className="text-2xl font-bold mb-6">Inactive Queues</h2>
+
+            {inactiveQueues.length === 0 ? (
+              <p>No inactive queues found.</p>
+            ) : (
+              <div className="space-y-4">
+                {inactiveQueues.map((item) => (
+                  <div
+                    key={item.id}
+                    className="border rounded-xl p-4 flex justify-between items-center"
+                  >
+                    <div>
+                      <h3 className="font-bold">{item.name}</h3>
+                      <p className="text-sm text-gray-500">ID: {item.id}</p>
+                    </div>
+
+                    <button
+                      onClick={() => handleRestoreQueue(item.id)}
+                      className="px-4 py-2 bg-green-500 text-white rounded-lg"
+                    >
+                      Restore
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button
+              onClick={() => setShowInactiveDialog(false)}
+              className="mt-6 w-full py-3 bg-gray-200 rounded-xl"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}

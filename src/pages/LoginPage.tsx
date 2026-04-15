@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faLock } from "@fortawesome/free-solid-svg-icons";
+import PSU from "../assets/PSU-new.jpg";
 
 const LoginPage: React.FC = () => {
   const [username, setUsername] = React.useState("");
@@ -94,8 +95,21 @@ const LoginPage: React.FC = () => {
   };
   return (
     <Layout showNavigation={false}>
-      <div className="flex items-center justify-center min-h-[80vh]">
-        <div className="w-full max-w-md p-10 space-y-8 bg-linear-to-br from-white via-orange-50/30 to-white rounded-3xl shadow-2xl border border-primary/20">
+      <div className="relative flex items-center justify-center min-h-[80vh] overflow-hidden">
+        {/* Background Image */}
+        <div
+          className="absolute inset-0 bg-cover bg-center z-0"
+          style={{
+            backgroundImage: `url(${PSU})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+          }}
+        ></div>
+
+        {/* White Filter Overlay */}
+        <div className="absolute inset-0 bg-white/70"></div>
+        <div className="z-10 w-full max-w-md p-10 space-y-8 bg-white rounded-3xl shadow-2xl border border-primary/20">
           <div className="text-center">
             <div className="mx-auto h-20 w-20 rounded-2xl bg-linear-to-br from-primary to-orange-700 flex items-center justify-center shadow-xl transform hover:rotate-6 transition-transform">
               <FontAwesomeIcon icon={faLock} className="text-3xl text-white" />

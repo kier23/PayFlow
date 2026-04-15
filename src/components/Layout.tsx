@@ -60,10 +60,12 @@ const Layout: React.FC<LayoutProps> = ({ children, showNavigation = true }) => {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">{children}</main>
+      <main className={showNavigation ? "container mx-auto px-4 py-8" : ""}>
+        {children}
+      </main>
 
       {/* Footer */}
-      <footer className="bg-white/95 backdrop-blur-xl border-t-2 border-primary mt-16 py-8 shadow-lg">
+      <footer className="bg-white/95 backdrop-blur-xl border-t-2 border-primary py-8 shadow-lg">
         <div className="container mx-auto px-4 text-center">
           <p className="text-gray-700 font-medium">
             © {new Date().getFullYear()} PayFlow - Queue Management System
