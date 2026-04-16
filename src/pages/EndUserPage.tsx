@@ -24,7 +24,7 @@ const EndUserPage: React.FC = () => {
       queue_id: string;
       ticket_number: number;
       status: string;
-      purpose?: string;
+      payment?: string;
     }>
   >([]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -82,7 +82,7 @@ const EndUserPage: React.FC = () => {
     try {
       const { data, error } = await supabase
         .from("Queue_Tickets")
-        .select("queue_id, ticket_number, status, purpose")
+        .select("queue_id, ticket_number, status, payment")
         .eq("guest_id", guestId)
         .in("status", ["waiting", "serving"])
         .order("created_at", { ascending: false });
@@ -486,9 +486,9 @@ const EndUserPage: React.FC = () => {
                           {ticket.queue_id}
                         </span>
                       </p>
-                      {ticket.purpose && (
+                      {ticket.payment && (
                         <p className="text-xs text-gray-500 mt-1">
-                          Purpose: {ticket.purpose}
+                          Purpose: {ticket.payment}
                         </p>
                       )}
                     </div>
