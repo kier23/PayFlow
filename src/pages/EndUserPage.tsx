@@ -67,7 +67,13 @@ const EndUserPage: React.FC = () => {
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("focus", handleVisibilityChange);
+    window.addEventListener("focus", checkActiveTicket);
+    window.addEventListener("pageshow", checkActiveTicket); // 👈 important for iOS
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        checkActiveTicket();
+      }
+    });
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
@@ -492,7 +498,7 @@ const EndUserPage: React.FC = () => {
                         </p>
                       )}
                     </div>
-                    <div className="ml-3 text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="ml-3 text-primary group-hover:opacity-100 transition-opacity">
                       <svg
                         className="w-6 h-6"
                         fill="none"

@@ -6,7 +6,6 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faClipboardList,
   faChartLine,
-  faCalendarAlt,
   faHourglassHalf,
   faCheck,
   faForward,
@@ -52,8 +51,6 @@ type TicketAnalytics = {
   cancelled: number;
 };
 
-type TimeFilter = "weekly" | "monthly" | "yearly";
-
 const AdminDashboard = () => {
   const [admin, setAdmin] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,7 +59,6 @@ const AdminDashboard = () => {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [creatingQueue, setCreatingQueue] = useState(false);
   const [queueName, setQueueName] = useState("");
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>("weekly");
   const [ticketAnalytics, setTicketAnalytics] = useState<TicketAnalytics>({
     waiting: 0,
     serving: 0,
@@ -73,6 +69,12 @@ const AdminDashboard = () => {
   const [queueGrowthData, setQueueGrowthData] = useState<any[]>([]);
   const [inactiveQueues, setInactiveQueues] = useState<QueueItem[]>([]);
   const [showInactiveDialog, setShowInactiveDialog] = useState(false);
+  const [viewType, setViewType] = useState<"yearly" | "monthly" | "weekly">(
+    "yearly",
+  );
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth()); // 0-11
+  const [selectedWeek, setSelectedWeek] = useState(1);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -151,15 +153,26 @@ const AdminDashboard = () => {
       const queueIds = queue.map((q) => q.id);
 
       // Calculate date range based on filter
-      const now = new Date();
       let startDate = new Date();
+      let endDate = new Date();
 
-      if (timeFilter === "weekly") {
-        startDate.setDate(now.getDate() - 7);
-      } else if (timeFilter === "monthly") {
-        startDate.setMonth(now.getMonth() - 1);
-      } else if (timeFilter === "yearly") {
-        startDate.setFullYear(now.getFullYear() - 1);
+      if (viewType === "yearly") {
+        startDate = new Date(selectedYear, 0, 1);
+        endDate = new Date(selectedYear, 11, 31);
+      }
+
+      if (viewType === "monthly") {
+        startDate = new Date(selectedYear, selectedMonth, 1);
+        endDate = new Date(selectedYear, selectedMonth + 1, 0);
+      }
+
+      if (viewType === "weekly") {
+        const firstDayOfMonth = new Date(selectedYear, selectedMonth, 1);
+        startDate = new Date(firstDayOfMonth);
+        startDate.setDate(firstDayOfMonth.getDate() + (selectedWeek - 1) * 7);
+
+        endDate = new Date(startDate);
+        endDate.setDate(startDate.getDate() + 6);
       }
 
       // Fetch tickets for admin's queues
@@ -167,7 +180,8 @@ const AdminDashboard = () => {
         .from("Queue_Tickets")
         .select("status, created_at")
         .in("queue_id", queueIds)
-        .gte("created_at", startDate.toISOString());
+        .gte("created_at", startDate.toISOString())
+        .lte("created_at", endDate.toISOString());
 
       if (tickets) {
         const analytics: TicketAnalytics = {
@@ -222,7 +236,7 @@ const AdminDashboard = () => {
     };
 
     fetchAnalytics();
-  }, [admin, queue, timeFilter]);
+  }, [admin, queue, viewType, selectedYear, selectedMonth, selectedWeek]);
 
   const handleCreateQueue = async () => {
     if (!admin) {
@@ -512,41 +526,62 @@ const AdminDashboard = () => {
                 </div>
 
                 {/* Time Filter */}
-                <div className="flex items-center gap-2 bg-gray-100 rounded-xl p-1.5">
-                  <FontAwesomeIcon
-                    icon={faCalendarAlt}
-                    className="text-gray-500 mr-2"
-                  />
-                  <button
-                    onClick={() => setTimeFilter("weekly")}
-                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                      timeFilter === "weekly"
-                        ? "bg-white text-primary shadow-md"
-                        : "text-gray-600 hover:text-gray-900"
-                    }`}
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* View Type */}
+                  <select
+                    value={viewType}
+                    onChange={(e) => setViewType(e.target.value as any)}
+                    className="px-4 py-2 rounded-lg border"
                   >
-                    Weekly
-                  </button>
-                  <button
-                    onClick={() => setTimeFilter("monthly")}
-                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                      timeFilter === "monthly"
-                        ? "bg-white text-primary shadow-md"
-                        : "text-gray-600 hover:text-gray-900"
-                    }`}
+                    <option value="yearly">Full Year</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="weekly">Weekly</option>
+                  </select>
+
+                  {/* Year */}
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(Number(e.target.value))}
+                    className="px-4 py-2 rounded-lg border"
                   >
-                    Monthly
-                  </button>
-                  <button
-                    onClick={() => setTimeFilter("yearly")}
-                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                      timeFilter === "yearly"
-                        ? "bg-white text-primary shadow-md"
-                        : "text-gray-600 hover:text-gray-900"
-                    }`}
-                  >
-                    Yearly
-                  </button>
+                    {[2023, 2024, 2025, 2026].map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Month (only if NOT yearly) */}
+                  {viewType !== "yearly" && (
+                    <select
+                      value={selectedMonth}
+                      onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                      className="px-4 py-2 rounded-lg border"
+                    >
+                      {Array.from({ length: 12 }).map((_, i) => (
+                        <option key={i} value={i}>
+                          {new Date(0, i).toLocaleString("default", {
+                            month: "long",
+                          })}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  {/* Week (only if weekly) */}
+                  {viewType === "weekly" && (
+                    <select
+                      value={selectedWeek}
+                      onChange={(e) => setSelectedWeek(Number(e.target.value))}
+                      className="px-4 py-2 rounded-lg border"
+                    >
+                      {[1, 2, 3, 4, 5].map((week) => (
+                        <option key={week} value={week}>
+                          Week {week}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               </div>
 

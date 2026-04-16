@@ -13,12 +13,8 @@ import {
   faUserPlus,
   faTrash,
   faChartLine,
-  faCalendarAlt,
   faHourglassHalf,
   faCheckCircle,
-  faCheck,
-  faForward,
-  faTimesCircle,
 } from "@fortawesome/free-solid-svg-icons";
 import {
   LineChart,
@@ -60,7 +56,8 @@ type TicketAnalytics = {
   cancelled: number;
 };
 
-type TimeFilter = "weekly" | "monthly" | "yearly";
+type ViewType = "yearly" | "monthly" | "weekly";
+
 type OfficeFilter = "all" | "assessment" | "cashier";
 
 const SuperAdmin: React.FC = () => {
@@ -75,10 +72,13 @@ const SuperAdmin: React.FC = () => {
     totalUsers: 0,
     totalAdmins: 0,
     totalQueues: 0,
+    activeQueues: 0,
+    ticketsGenerated: 0,
+    completionRate: 0,
+    inProgress: 0,
   });
 
   // Analytics state
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>("weekly");
   const [graphOfficeFilter, setGraphOfficeFilter] =
     useState<OfficeFilter>("all");
   const [ticketAnalytics, setTicketAnalytics] = useState<TicketAnalytics>({
@@ -111,6 +111,14 @@ const SuperAdmin: React.FC = () => {
     message: string;
     type: "success" | "error" | "info";
   }>({ show: false, message: "", type: "success" });
+
+  const [viewType, setViewType] = useState<ViewType>("yearly");
+
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+
+  const [selectedWeek, setSelectedWeek] = useState(1);
 
   const navigate = useNavigate();
 
@@ -154,15 +162,21 @@ const SuperAdmin: React.FC = () => {
 
     setSuperAdmin(profileData);
 
-    const [profilesRes, queueRes] = await Promise.all([
+    const [profilesRes, queueRes, activeQueueRes] = await Promise.all([
       supabase.from("Profiles").select("id, name, email, role, office"),
       supabase.from("Queue").select("id", { count: "exact", head: true }),
+      supabase
+        .from("Queue")
+        .select("id", { count: "exact", head: true })
+        .eq("is_active", true),
     ]);
 
     const allProfiles = profilesRes.data;
     const profilesError = profilesRes.error;
     const queueError = queueRes.error;
     const queueCount = typeof queueRes.count === "number" ? queueRes.count : 0;
+    const activeQueueCount =
+      typeof activeQueueRes.count === "number" ? activeQueueRes.count : 0;
 
     if (profilesError) {
       setError(profilesError.message);
@@ -177,14 +191,13 @@ const SuperAdmin: React.FC = () => {
       setAccounts(profileList);
       const totalUsers = profileList.length;
       const totalAdmins = profileList.filter((p) => p.role === "admin").length;
-      const totalSuperAdmins = profileList.filter(
-        (p) => p.role === "superadmin",
-      ).length;
-      setMetrics({
+      setMetrics((prev) => ({
+        ...prev,
         totalUsers,
-        totalAdmins: totalAdmins + totalSuperAdmins,
+        totalAdmins: totalAdmins,
         totalQueues: queueCount,
-      });
+        activeQueues: activeQueueCount,
+      }));
     }
 
     if (queueError && !error) {
@@ -204,15 +217,35 @@ const SuperAdmin: React.FC = () => {
   useEffect(() => {
     const fetchAnalytics = async () => {
       // Calculate date range
-      const now = new Date();
       let startDate = new Date();
+      let endDate = new Date();
 
-      if (timeFilter === "weekly") {
-        startDate.setDate(now.getDate() - 7);
-      } else if (timeFilter === "monthly") {
-        startDate.setMonth(now.getMonth() - 1);
-      } else if (timeFilter === "yearly") {
-        startDate.setFullYear(now.getFullYear() - 1);
+      if (viewType === "yearly") {
+        startDate = new Date(selectedYear, 0, 1);
+        endDate = new Date(selectedYear, 11, 31);
+      }
+
+      if (viewType === "monthly") {
+        startDate = new Date(selectedYear, selectedMonth, 1);
+        endDate = new Date(selectedYear, selectedMonth + 1, 0);
+      }
+
+      if (viewType === "weekly") {
+        startDate = new Date(
+          selectedYear,
+          selectedMonth,
+          1 + (selectedWeek - 1) * 7,
+        );
+
+        endDate = new Date(
+          selectedYear,
+          selectedMonth,
+          1 + selectedWeek * 7 - 1,
+        );
+
+        if (endDate.getMonth() !== selectedMonth) {
+          endDate = new Date(selectedYear, selectedMonth + 1, 0);
+        }
       }
 
       // Fetch all tickets with status
@@ -220,18 +253,25 @@ const SuperAdmin: React.FC = () => {
       let filteredQueueIds: number[] | null = null;
 
       if (graphOfficeFilter !== "all") {
-        const { data: officeProfiles } = await supabase
+        const { data: officeProfiles, error: profileErr } = await supabase
           .from("Profiles")
           .select("id")
-          .eq("office", graphOfficeFilter);
+          .eq("office", graphOfficeFilter)
+          .eq("role", "admin");
 
-        if (officeProfiles && officeProfiles.length > 0) {
-          const profileIds = officeProfiles.map((p) => p.id);
+        if (profileErr) {
+          console.error(profileErr);
+        }
+
+        const profileIds = officeProfiles?.map((p) => p.id) || [];
+
+        if (profileIds.length > 0) {
           const { data: officeQueues } = await supabase
             .from("Queue")
             .select("id")
             .in("managed_by", profileIds);
-          filteredQueueIds = officeQueues ? officeQueues.map((q) => q.id) : [];
+
+          filteredQueueIds = officeQueues?.map((q) => q.id) || [];
         } else {
           filteredQueueIds = [];
         }
@@ -240,7 +280,8 @@ const SuperAdmin: React.FC = () => {
       let ticketsQuery = supabase
         .from("Queue_Tickets")
         .select("status, created_at, queue_id")
-        .gte("created_at", startDate.toISOString());
+        .gte("created_at", startDate.toISOString())
+        .lte("created_at", endDate.toISOString());
 
       if (filteredQueueIds !== null) {
         if (filteredQueueIds.length === 0) {
@@ -276,6 +317,22 @@ const SuperAdmin: React.FC = () => {
         });
 
         setTicketAnalytics(analytics);
+
+        const totalTickets = tickets.length;
+        const completedTickets = analytics.done;
+        const inProgress = analytics.waiting + analytics.serving;
+
+        const completionRate =
+          totalTickets > 0
+            ? Number(((completedTickets / totalTickets) * 100).toFixed(1))
+            : 0;
+
+        setMetrics((prev) => ({
+          ...prev,
+          ticketsGenerated: totalTickets,
+          completionRate,
+          inProgress,
+        }));
       }
 
       // Fetch queue growth data - count actual tickets per day
@@ -344,8 +401,10 @@ const SuperAdmin: React.FC = () => {
             const queueIds = allQueues.map((q) => q.id);
             const { data: queueTickets } = await supabase
               .from("Queue_Tickets")
-              .select("queue_id")
-              .in("queue_id", queueIds);
+              .select("queue_id, created_at")
+              .in("queue_id", queueIds)
+              .gte("created_at", startDate.toISOString())
+              .lte("created_at", endDate.toISOString());
 
             if (queueTickets) {
               queueTickets.forEach((qt) => {
@@ -368,7 +427,7 @@ const SuperAdmin: React.FC = () => {
     };
 
     fetchAnalytics();
-  }, [timeFilter, graphOfficeFilter]);
+  }, [viewType, selectedYear, selectedMonth, selectedWeek, graphOfficeFilter]);
 
   // Auto-dismiss notification after 4 seconds
   useEffect(() => {
@@ -405,8 +464,16 @@ const SuperAdmin: React.FC = () => {
     await supabase.auth.signOut();
     setSuperAdmin(null);
     setAccounts([]);
-    setMetrics({ totalUsers: 0, totalAdmins: 0, totalQueues: 0 });
-    navigate("/");
+    setMetrics({
+      totalUsers: 0,
+      totalAdmins: 0,
+      totalQueues: 0,
+      activeQueues: 0,
+      ticketsGenerated: 0,
+      completionRate: 0,
+      inProgress: 0,
+    });
+    navigate("/admin");
   };
 
   // ✅ Invite user function
@@ -771,70 +838,104 @@ const SuperAdmin: React.FC = () => {
               </div>
 
               {/* Time Filter */}
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2 bg-gray-100 rounded-xl p-1.5">
-                  <FontAwesomeIcon
-                    icon={faCalendarAlt}
-                    className="text-gray-500 mr-2"
-                  />
-                  <button
-                    onClick={() => setTimeFilter("weekly")}
-                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                      timeFilter === "weekly"
-                        ? "bg-white text-primary shadow-md"
-                        : "text-gray-600 hover:text-gray-900"
-                    }`}
+              <div className="flex flex-col gap-4 mb-8">
+                {/* TOP ROW = ALL SELECTORS */}
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* VIEW TYPE */}
+                  <select
+                    value={viewType}
+                    onChange={(e) => setViewType(e.target.value as ViewType)}
+                    className="px-4 py-3 rounded-xl border-2 border-gray-200 bg-white font-semibold"
                   >
-                    Weekly
-                  </button>
-                  <button
-                    onClick={() => setTimeFilter("monthly")}
-                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                      timeFilter === "monthly"
-                        ? "bg-white text-primary shadow-md"
-                        : "text-gray-600 hover:text-gray-900"
-                    }`}
+                    <option value="yearly">Full Year</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="weekly">Weekly</option>
+                  </select>
+
+                  {/* YEAR */}
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(Number(e.target.value))}
+                    className="px-4 py-3 rounded-xl border-2 border-gray-200 bg-white font-semibold"
                   >
-                    Monthly
-                  </button>
-                  <button
-                    onClick={() => setTimeFilter("yearly")}
-                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                      timeFilter === "yearly"
-                        ? "bg-white text-primary shadow-md"
-                        : "text-gray-600 hover:text-gray-900"
-                    }`}
-                  >
-                    Yearly
-                  </button>
+                    {[2024, 2025, 2026, 2027].map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* MONTH */}
+                  {(viewType === "monthly" || viewType === "weekly") && (
+                    <select
+                      value={selectedMonth}
+                      onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                      className="px-4 py-3 rounded-xl border-2 border-gray-200 bg-white font-semibold"
+                    >
+                      {[
+                        "January",
+                        "February",
+                        "March",
+                        "April",
+                        "May",
+                        "June",
+                        "July",
+                        "August",
+                        "September",
+                        "October",
+                        "November",
+                        "December",
+                      ].map((month, index) => (
+                        <option key={month} value={index}>
+                          {month}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  {/* WEEK */}
+                  {viewType === "weekly" && (
+                    <select
+                      value={selectedWeek}
+                      onChange={(e) => setSelectedWeek(Number(e.target.value))}
+                      className="px-4 py-3 rounded-xl border-2 border-gray-200 bg-white font-semibold"
+                    >
+                      {[1, 2, 3, 4, 5].map((week) => (
+                        <option key={week} value={week}>
+                          Week {week}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
-                {/* Office Filter */}
-                <div className="flex items-center gap-2 bg-gray-100 rounded-xl p-1.5">
-                  <span className="text-gray-500 text-sm font-semibold ml-1 mr-1">
-                    Office:
-                  </span>
-                  {(["all", "cashier", "assessment"] as OfficeFilter[]).map(
-                    (office) => (
-                      <button
-                        key={office}
-                        onClick={() => setGraphOfficeFilter(office)}
-                        className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all capitalize ${
-                          graphOfficeFilter === office
-                            ? office === "all"
-                              ? "bg-white text-primary shadow-md"
-                              : office === "cashier"
-                                ? "bg-white text-green-600 shadow-md"
-                                : "bg-white text-blue-600 shadow-md"
-                            : "text-gray-600 hover:text-gray-900"
-                        }`}
-                      >
-                        {office === "all"
-                          ? "All"
-                          : office.charAt(0).toUpperCase() + office.slice(1)}
-                      </button>
-                    ),
-                  )}
+                {/* BOTTOM ROW = OFFICE FILTER RIGHT ALIGNED */}
+                <div className="flex justify-end">
+                  <div className="flex items-center gap-2 bg-gray-100 rounded-xl p-1.5">
+                    <span className="text-gray-500 text-sm font-semibold ml-1 mr-1">
+                      Office:
+                    </span>
+
+                    {(["all", "cashier", "assessment"] as OfficeFilter[]).map(
+                      (office) => (
+                        <button
+                          key={office}
+                          onClick={() => setGraphOfficeFilter(office)}
+                          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all capitalize ${
+                            graphOfficeFilter === office
+                              ? office === "all"
+                                ? "bg-white text-primary shadow-md"
+                                : office === "cashier"
+                                  ? "bg-white text-green-600 shadow-md"
+                                  : "bg-white text-blue-600 shadow-md"
+                              : "text-gray-600 hover:text-gray-900"
+                          }`}
+                        >
+                          {office}
+                        </button>
+                      ),
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -893,19 +994,19 @@ const SuperAdmin: React.FC = () => {
 
                 {/* Stats Cards */}
                 <div className="space-y-4">
-                  <div className="bg-linear-to-br from-yellow-50 to-orange-50 rounded-2xl p-6 border-2 border-yellow-300 shadow-lg">
+                  <div className="bg-linear-to-br from-indigo-50 to-blue-50 rounded-2xl p-6 border-2 border-indigo-300 shadow-lg">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-semibold text-yellow-700 uppercase">
-                          Waiting
+                        <p className="text-sm font-semibold text-indigo-700 uppercase">
+                          Tickets Generated
                         </p>
-                        <p className="text-4xl font-extrabold text-yellow-900 mt-2">
-                          {ticketAnalytics.waiting}
+                        <p className="text-4xl font-extrabold text-indigo-900 mt-2">
+                          {metrics.ticketsGenerated}
                         </p>
                       </div>
-                      <div className="w-16 h-16 rounded-full bg-yellow-500 flex items-center justify-center">
+                      <div className="w-16 h-16 rounded-full bg-indigo-500 flex items-center justify-center">
                         <FontAwesomeIcon
-                          icon={faHourglassHalf}
+                          icon={faClipboardList}
                           className="text-3xl text-white"
                         />
                       </div>
@@ -916,10 +1017,10 @@ const SuperAdmin: React.FC = () => {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm font-semibold text-green-700 uppercase">
-                          Serving
+                          Completion Rate
                         </p>
                         <p className="text-4xl font-extrabold text-green-900 mt-2">
-                          {ticketAnalytics.serving}
+                          {metrics.completionRate}%
                         </p>
                       </div>
                       <div className="w-16 h-16 rounded-full bg-green-500 flex items-center justify-center">
@@ -931,61 +1032,40 @@ const SuperAdmin: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="bg-linear-to-br from-blue-50 to-cyan-50 rounded-2xl p-6 border-2 border-blue-300 shadow-lg">
+                  <div className="bg-linear-to-br from-yellow-50 to-orange-50 rounded-2xl p-6 border-2 border-yellow-300 shadow-lg">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-semibold text-blue-700 uppercase">
-                          Completed
+                        <p className="text-sm font-semibold text-yellow-700 uppercase">
+                          In Progress
                         </p>
-                        <p className="text-4xl font-extrabold text-blue-900 mt-2">
-                          {ticketAnalytics.done}
+                        <p className="text-4xl font-extrabold text-yellow-900 mt-2">
+                          {metrics.inProgress}
                         </p>
                       </div>
-                      <div className="w-16 h-16 rounded-full bg-blue-500 flex items-center justify-center">
+                      <div className="w-16 h-16 rounded-full bg-yellow-500 flex items-center justify-center">
                         <FontAwesomeIcon
-                          icon={faCheck}
+                          icon={faHourglassHalf}
                           className="text-3xl text-white"
                         />
                       </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-linear-to-br from-red-50 to-pink-50 rounded-2xl p-4 border-2 border-red-300 shadow-lg">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs font-semibold text-red-700 uppercase">
-                            Skipped
-                          </p>
-                          <p className="text-2xl font-extrabold text-red-900 mt-1">
-                            {ticketAnalytics.skipped}
-                          </p>
-                        </div>
-                        <div className="w-10 h-10 rounded-full bg-red-500 flex items-center justify-center">
-                          <FontAwesomeIcon
-                            icon={faForward}
-                            className="text-xl text-white"
-                          />
-                        </div>
+                  <div className="bg-linear-to-br from-purple-50 to-pink-50 rounded-2xl p-6 border-2 border-purple-300 shadow-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-purple-700 uppercase">
+                          Active Queues
+                        </p>
+                        <p className="text-4xl font-extrabold text-purple-900 mt-2">
+                          {metrics.activeQueues}
+                        </p>
                       </div>
-                    </div>
-
-                    <div className="bg-linear-to-br from-gray-50 to-slate-50 rounded-2xl p-4 border-2 border-gray-300 shadow-lg">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs font-semibold text-gray-700 uppercase">
-                            Cancelled
-                          </p>
-                          <p className="text-2xl font-extrabold text-gray-900 mt-1">
-                            {ticketAnalytics.cancelled}
-                          </p>
-                        </div>
-                        <div className="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center">
-                          <FontAwesomeIcon
-                            icon={faTimesCircle}
-                            className="text-xl text-white"
-                          />
-                        </div>
+                      <div className="w-16 h-16 rounded-full bg-purple-500 flex items-center justify-center">
+                        <FontAwesomeIcon
+                          icon={faChartLine}
+                          className="text-3xl text-white"
+                        />
                       </div>
                     </div>
                   </div>
