@@ -77,6 +77,10 @@ const QueueStatus = () => {
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelCleanupRef = useRef<(() => void) | null>(null);
+  // Mirrors userTicket state so queue-channel callbacks always read the latest value
+  const userTicketRef = useRef<QueueTicket | null>(null);
+  // Tracks which proximity alerts have already been fired to prevent duplicates
+  const proximityNotifiedRef = useRef<Set<string>>(new Set());
   // ─────────────────────────────────────────────────────────────────────────
 
   // Android/Chrome install prompt
@@ -349,6 +353,11 @@ const QueueStatus = () => {
     }
   };
 
+  // Keep userTicketRef in sync so queue-channel callbacks always see the latest ticket
+  useEffect(() => {
+    userTicketRef.current = userTicket;
+  }, [userTicket]);
+
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
@@ -372,6 +381,37 @@ const QueueStatus = () => {
         },
         (payload) => {
           console.log("Queue changed:", payload);
+
+          // ── Proximity notifications ──────────────────────────────────
+          const newLatest = payload.new?.latest_number as number | null;
+          const ticket = userTicketRef.current;
+
+          if (
+            ticket &&
+            ticket.status === "waiting" &&
+            newLatest !== null &&
+            newLatest !== undefined
+          ) {
+            const diff = ticket.ticket_number - newLatest;
+
+            const notifKey5 = `5away-${ticket.id}-at-${newLatest}`;
+            if (diff === 5 && !proximityNotifiedRef.current.has(notifKey5)) {
+              proximityNotifiedRef.current.add(notifKey5);
+              addNotification(
+                `Almost your turn! 5 numbers away — ticket #${ticket.ticket_number}, get ready.`,
+              );
+            }
+
+            const notifKey1 = `next-${ticket.id}-at-${newLatest}`;
+            if (diff === 1 && !proximityNotifiedRef.current.has(notifKey1)) {
+              proximityNotifiedRef.current.add(notifKey1);
+              addNotification(
+                `You're next! Ticket #${ticket.ticket_number} — please make your way to the counter.`,
+              );
+            }
+          }
+          // ─────────────────────────────────────────────────────────────
+
           fetchStatus();
         },
       )
@@ -397,9 +437,7 @@ const QueueStatus = () => {
           const ticketGuestId = payload.new?.guest_id;
 
           if (ticketGuestId === guestId && newStatus !== oldStatus) {
-            if (newStatus === "serving")
-              addNotification("It's your turn! Please proceed to the counter.");
-            else if (newStatus === "skipped")
+            if (newStatus === "skipped")
               addNotification("Your ticket was skipped. Please resubmit.");
             else if (newStatus === "done")
               addNotification("Your transaction is complete. Thank you!");
